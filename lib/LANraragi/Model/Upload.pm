@@ -78,17 +78,31 @@ sub handle_incoming_file ( $tempfile, $catid, $tags, $title, $summary ) {
     # Stop here if file is a dupe and replacement is turned off.
     if ( ( -e $output_file || $isdupe ) && !$replace_dupe ) {
 
-        # Trash temporary file
-        unlink_path $tempfile;
+        # Content is identical
+        if ($isdupe) {
+            unlink_path $tempfile;
+            my $suffix = " Enable replace duplicated archive in config to replace old ones.";
+            return ( 409, $id, $filename, "This file already exists in the Library." . $suffix );
+        }
 
-        # The file already exists
-        my $suffix = " Enable replace duplicated archive in config to replace old ones.";
-        my $msg =
-          $isdupe
-          ? "This file already exists in the Library." . $suffix
-          : "A file with the same name is present in the Library." . $suffix;
+        # Filename collision
+        my ( $base, $dirs, $ext ) = fileparse( $output_file, qr/\.[^.]*/ );
+        my $counter = 1;
+        while ( $counter < 100 ) {
+            my $new_name = "${base}_${counter}${ext}";
+            $output_file = create_path( $userdir . '/' . $new_name );
+            last unless -e $output_file;
+            $counter++;
+        }
 
-        return ( 409, $id, $filename, $msg );
+        if ( -e $output_file ) {
+            unlink_path $tempfile;
+            return ( 409, $id, $filename, "Too many files with similar names present." );
+        }
+
+        $logger->info("Filename collision, renamed to " . ( fileparse($output_file) )[0] );
+        $filename = ( fileparse($output_file) )[0];
+        $id       = compute_id($tempfile);
     }
 
     # If we are replacing an existing file, remove the old one first.
